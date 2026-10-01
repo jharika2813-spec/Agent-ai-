@@ -25,3 +25,4 @@ for i in range(3):
         print("Action: Normal outdoor activities are okay.")
     else:
         print("Action: Wear warm clothes.")
+    
