@@ -1,0 +1,193 @@
+{
+  "name": "Employee Onboarding Concierge - Single HTML Form Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Employee Onboarding Concierge",
+        "formDescription": "Ask questions about onboarding, first-week tasks, policies, IT access, training, and onboarding progress.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Session ID",
+              "placeholder": "demo-001",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Employee Name",
+              "placeholder": "Aisha",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Role",
+              "placeholder": "Data Science Intern"
+            },
+            {
+              "fieldLabel": "Department",
+              "placeholder": "Engineering"
+            },
+            {
+              "fieldLabel": "Location",
+              "placeholder": "Vijayawada"
+            },
+            {
+              "fieldLabel": "Start Date",
+              "fieldType": "date"
+            },
+            {
+              "fieldLabel": "Your Question",
+              "fieldType": "textarea",
+              "placeholder": "What should I complete during my first week?",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "buttonLabel": "Ask Concierge",
+          "path": "employee-onboarding-concierge"
+        }
+      },
+      "id": "0f71814e-ff8a-487a-ad7b-ae0f28a81701",
+      "name": "HTML Input Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        704,
+        416
+      ],
+      "webhookId": "240e8713-b3d6-4f9f-8ffd-0ad469ccd397"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json;\n\nconst sessionId = String(input.session_id || 'default');\nconst name = String(input.name || 'New Employee');\nconst role = String(input.role || 'Not provided');\nconst department = String(input.department || 'Not provided');\nconst location = String(input.location || 'Not provided');\nconst startDate = String(input.start_date || 'Not provided');\n\n// Get question from the HTML Form\nconst question = String(\n  input.question ||\n  input[\"Your Question\"] ||\n  \"\"\n).trim();\n\nif (!question) {\n  throw new Error(\n    'Question is required. Please enter a question in the HTML form.'\n  );\n}\n\nconst store = $getWorkflowStaticData('global');\n\nif (!store.sessions) {\n  store.sessions = {};\n}\n\nif (!store.sessions[sessionId]) {\n  store.sessions[sessionId] = [];\n}\n\nconst history = store.sessions[sessionId].slice(-8);\n\nconst systemPrompt = `You are an Employee Onboarding Concierge.\n\nYour purpose is to help new employees during onboarding.\n\nYou can help with:\n- onboarding questions\n- first-week tasks\n- IT access\n- policy acknowledgement\n- training\n- onboarding schedule\n- documents\n- HR questions\n- onboarding progress\n\nBe friendly, concise and practical.\n\nDo not invent company-specific policies, deadlines,\ndocuments, salary information or confidential employee information.\n\nIf information is not available, recommend contacting HR,\nthe manager, or IT.\n\nReturn plain text only.\nUse short headings and bullet points when useful.`;\n\nconst userMessage = `Employee profile:\nName: ${name}\nRole: ${role}\nDepartment: ${department}\nLocation: ${location}\nStart Date: ${startDate}\n\nCurrent question:\n${question}`;\n\nconst messages = [\n  {\n    role: 'system',\n    content: systemPrompt\n  },\n  ...history,\n  {\n    role: 'user',\n    content: userMessage\n  }\n];\n\nreturn [{\n  json: {\n    session_id: sessionId,\n    name,\n    role,\n    department,\n    location,\n    start_date: startDate,\n    question,\n    messages\n  }\n}];"
+      },
+      "id": "2ab5f853-032a-48f0-97d8-b5fdc4cace2c",
+      "name": "Prepare AI Request + Memory",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer groq key here"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: 'qwen/qwen3.8-27b', temperature: 0.2, max_tokens: 700, messages: $json.messages } }}",
+        "options": {}
+      },
+      "id": "1f1a933c-05f9-45af-bac9-815e6517b915",
+      "name": "Groq AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const groq = $json;\n\nconst answer =\n  groq.choices?.[0]?.message?.content ||\n  'Sorry, I could not generate a response.';\n\nconst input = $('Prepare AI Request + Memory').first().json;\nconst sessionId = input.session_id;\n\n// Save the current conversation into simple memory.\nconst store = $getWorkflowStaticData('global');\n\nif (!store.sessions) {\n  store.sessions = {};\n}\n\nif (!store.sessions[sessionId]) {\n  store.sessions[sessionId] = [];\n}\n\nstore.sessions[sessionId].push(\n  {\n    role: 'user',\n    content: input.question\n  },\n  {\n    role: 'assistant',\n    content: answer\n  }\n);\n\n// Keep memory small.\nstore.sessions[sessionId] =\n  store.sessions[sessionId].slice(-8);\n\nreturn [{\n  json: {\n    session_id: sessionId,\n    name: input.name,\n    role: input.role,\n    department: input.department,\n    location: input.location,\n    question: input.question,\n    answer\n  }\n}];"
+      },
+      "id": "64c10727-6fbd-4041-8d24-eeeff6e76386",
+      "name": "Save Memory + Prepare Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "Employee Onboarding Concierge",
+        "completionMessage": "=={{ \"Hello \" + $json.name + \"!\\n\\nYour Question:\\n\" + $json.question + \"\\n\\nAI Response:\\n\" + $json.answer + \"\\n\\nSession ID: \" + $json.session_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        1792,
+        416
+      ],
+      "id": "06df82ce-97d6-4fc3-9b8c-c239693e782a",
+      "name": "Form",
+      "webhookId": "6b032fd9-eaa3-464b-8fd1-9df501fb42a6"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTML Input Form": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Request + Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Request + Memory": {
+      "main": [
+        [
+          {
+            "node": "Groq AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq AI": {
+      "main": [
+        [
+          {
+            "node": "Save Memory + Prepare Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Memory + Prepare Output": {
+      "main": [
+        [
+          {
+            "node": "Form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "962adcd4-bad8-43b6-8237-7e14605f2514",
+  "meta": {
+    "instanceId": "75b28d50a7deeab00a6028d8ee793b31a0823a3bb3ca3b5ff45bff7553ab18b6"
+  },
+  "nodeGroups": [],
+  "id": "G26WoqSdBA00fHVN",
+  "tags": []
+}
